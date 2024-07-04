@@ -1307,6 +1307,7 @@ func TestFunctionNameFormattingInStackTrace(t *testing.T) {
 			[]onBreakpoint{{
 				// Stop at line 36
 				execute: func() {
+					// TODO: did riscv need this part?
 					if runtime.GOARCH == "386" && goversion.VersionAfterOrEqual(runtime.Version(), 1, 18) && !goversion.VersionAfterOrEqual(runtime.Version(), 1, 21) {
 						client.StepInRequest(1)
 						client.ExpectStepInResponse(t)
