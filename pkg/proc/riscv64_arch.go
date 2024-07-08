@@ -11,8 +11,8 @@ import (
 	"github.com/go-delve/delve/pkg/goversion"
 )
 
-// ebreak instruction
-var riscv64BreakInstruction = []byte{0x0, 0x10, 0x0, 0x73}
+// ebreak instruction: 0x00100073
+var riscv64BreakInstruction = []byte{0x73, 0x00, 0x10, 0x00}
 
 // RISCV64Arch returns an initialized RISCV64 struct.
 func RISCV64Arch(goos string) *Arch {
@@ -337,7 +337,7 @@ func riscv64RegistersToDwarfRegisters(staticBase uint64, regs Registers) *op.Dwa
 }
 
 func riscv64AddrAndStackRegsToDwarfRegisters(staticBase, pc, sp, bp, lr uint64) op.DwarfRegisters {
-	dregs := make([]*op.DwarfRegister, int(regnum.RISCV64MaxRegNum()))
+	dregs := make([]*op.DwarfRegister, int(regnum.RISCV64_PC+1))
 	dregs[regnum.RISCV64_PC] = op.DwarfRegisterFromUint64(pc)
 	dregs[regnum.RISCV64_SP] = op.DwarfRegisterFromUint64(sp)
 	dregs[regnum.RISCV64_FP] = op.DwarfRegisterFromUint64(bp)

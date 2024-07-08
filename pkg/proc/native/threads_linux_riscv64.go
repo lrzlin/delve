@@ -1,6 +1,7 @@
 package native
 
 import (
+	"bytes"
 	"debug/elf"
 	"fmt"
 	"syscall"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-delve/delve/pkg/proc"
 	"github.com/go-delve/delve/pkg/proc/linutil"
+	"golang.org/x/arch/riscv64/riscv64asm"
 )
 
 func (thread *nativeThread) fpRegisters() ([]proc.Register, []byte, error) {
@@ -47,4 +49,221 @@ func (t *nativeThread) restoreRegisters(savedRegs proc.Registers) error {
 	}
 
 	return restoreRegistersErr
+}
+
+// resolvePC is used to resolve next PC for current instruction.
+func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
+	regs := savedRegs.(*linutil.RISCV64Registers)
+	nextInstLen := t.BinInfo().Arch.MaxInstructionLength()
+	nextInstBytes := make([]byte, nextInstLen)
+	var err error
+
+	t.dbp.execPtraceFunc(func() {
+		_, err = sys.PtracePeekData(t.ID, uintptr(regs.PC()), nextInstBytes)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	nextPCs := []uint64{regs.PC() + uint64(nextInstLen)}
+	if bytes.Equal(nextInstBytes, t.BinInfo().Arch.BreakpointInstruction()) {
+		return nextPCs, nil
+	}
+
+	nextInst, err := riscv64asm.Decode(nextInstBytes)
+	if err != nil {
+		return nil, err
+	}
+	switch nextInst.Op {
+	case riscv64asm.BEQ, riscv64asm.BNE, riscv64asm.BLT, riscv64asm.BGE, riscv64asm.BLTU, riscv64asm.BGEU:
+		rs1, _ := nextInst.Args[0].(riscv64asm.Reg)
+		rs2, _ := nextInst.Args[1].(riscv64asm.Reg)
+		bimm12, _ := nextInst.Args[2].(riscv64asm.Simm)
+		src1u, _ := regs.GetReg(uint64(rs1))
+		src2u, _ := regs.GetReg(uint64(rs2))
+		src1, src2 := int64(src1u), int64(src2u)
+
+		switch nextInst.Op {
+		case riscv64asm.BEQ:
+			if src1 == src2 && int(bimm12.Imm) != nextInstLen {
+				nextPCs = append(nextPCs, regs.PC()+uint64(bimm12.Imm))
+			}
+		case riscv64asm.BNE:
+			if src1 != src2 && int(bimm12.Imm) != nextInstLen {
+				nextPCs = append(nextPCs, regs.PC()+uint64(bimm12.Imm))
+			}
+		case riscv64asm.BLT:
+			if src1 < src2 && int(bimm12.Imm) != nextInstLen {
+				nextPCs = append(nextPCs, regs.PC()+uint64(bimm12.Imm))
+			}
+		case riscv64asm.BGE:
+			if src1 >= src2 && int(bimm12.Imm) != nextInstLen {
+				nextPCs = append(nextPCs, regs.PC()+uint64(bimm12.Imm))
+			}
+		case riscv64asm.BLTU:
+			if src1u < src2u && int(bimm12.Imm) != nextInstLen {
+				nextPCs = append(nextPCs, regs.PC()+uint64(bimm12.Imm))
+			}
+		case riscv64asm.BGEU:
+			if src1u >= src2u && int(bimm12.Imm) != nextInstLen {
+				nextPCs = append(nextPCs, regs.PC()+uint64(bimm12.Imm))
+			}
+		}
+
+	case riscv64asm.JAL:
+		jimm, _ := nextInst.Args[1].(riscv64asm.Simm)
+		if int(jimm.Imm) != nextInstLen {
+			nextPCs = append(nextPCs, regs.PC()+uint64(jimm.Imm))
+		}
+
+	case riscv64asm.JALR:
+		rs1_mem := nextInst.Args[1].(riscv64asm.RegOffset)
+		rs1, ofs := rs1_mem.OfsReg, rs1_mem.Ofs
+		src1, _ := regs.GetReg(uint64(rs1))
+		if (src1+uint64(ofs.Imm))&(^uint64(0x1)) != nextPCs[0] {
+			nextPCs = append(nextPCs, (src1+uint64(ofs.Imm))&(^uint64(0x1)))
+		}
+
+	// We can't put a breakpoint in the middle of a lr/sc atomic sequence, so look for the end of the sequence and put the breakpoint there.
+	// RISC-V Go only use lr.w/d.aq, see comments at the beginning of $GOROOT/src/runtime/internal/atomic/atomic_riscv64.s
+	case riscv64asm.LR_D_AQ, riscv64asm.LR_W_AQ:
+		// Currently, RISC-V Go only use this kind of lr/sc sequence, so only check this pattern.
+		// defined in $GOROOT/src/cmd/compile/internal/riscv64/ssa.go:
+		// LR	(Rarg0), Rtmp
+		// BNE	Rtmp, Rarg1, 3(PC)
+		// SC	Rarg2, (Rarg0), Rtmp
+		// BNE	Rtmp, ZERO, -3(PC)
+		t.dbp.execPtraceFunc(func() {
+			_, err = sys.PtracePeekData(t.ID, uintptr(regs.PC()+uint64(nextInstLen)), nextInstBytes)
+		})
+		if err != nil {
+			return nil, err
+		}
+		nextInst, err = riscv64asm.Decode(nextInstBytes)
+		if err != nil {
+			return nil, err
+		}
+		if nextInst.Op != riscv64asm.BNE {
+			break
+		}
+
+		t.dbp.execPtraceFunc(func() {
+			_, err = sys.PtracePeekData(t.ID, uintptr(regs.PC()+uint64(nextInstLen*2)), nextInstBytes)
+		})
+		if err != nil {
+			return nil, err
+		}
+		nextInst, err = riscv64asm.Decode(nextInstBytes)
+		if err != nil {
+			return nil, err
+		}
+		if nextInst.Op != riscv64asm.SC_D_RL && nextInst.Op != riscv64asm.SC_W_RL {
+			break
+		}
+
+		t.dbp.execPtraceFunc(func() {
+			_, err = sys.PtracePeekData(t.ID, uintptr(regs.PC()+uint64(nextInstLen*3)), nextInstBytes)
+		})
+		if err != nil {
+			return nil, err
+		}
+		nextInst, err = riscv64asm.Decode(nextInstBytes)
+		if err != nil {
+			return nil, err
+		}
+		if nextInst.Op != riscv64asm.BNE {
+			break
+		}
+		nextPCs = []uint64{regs.PC() + 3*uint64(nextInstLen)}
+	}
+
+	return nextPCs, nil
+}
+
+// RISC-V doesn't have ptrace singlestep support, so use breakpoint to emulate it.
+func (procgrp *processGroup) singleStep(t *nativeThread) (err error) {
+	regs, err := t.Registers()
+	if err != nil {
+		return err
+	}
+	nextPCs, err := t.resolvePC(regs)
+	if err != nil {
+		return err
+	}
+	originalDataSet := make(map[uintptr][]byte)
+
+	// Do in batch, first set breakpoint, then continue.
+	t.dbp.execPtraceFunc(func() {
+		breakpointInstr := t.BinInfo().Arch.BreakpointInstruction()
+		readWriteMem := func(i int, addr uintptr, instr []byte) error {
+			originalData := make([]byte, len(breakpointInstr))
+			_, err = sys.PtracePeekData(t.ID, addr, originalData)
+			if err != nil {
+				return err
+			}
+			// _, err = pokeMemory(t.ID, addr, instr)
+			_, err = sys.PtracePokeData(t.ID, addr, instr)
+			if err != nil {
+				return err
+			}
+			// Everything is ok, store originalData
+			originalDataSet[addr] = originalData
+			return nil
+		}
+		for i, nextPC := range nextPCs {
+			err = readWriteMem(i, uintptr(nextPC), breakpointInstr)
+			if err != nil {
+				return
+			}
+		}
+	})
+	// Make sure we restore before return.
+	defer func() {
+		t.dbp.execPtraceFunc(func() {
+			for addr, originalData := range originalDataSet {
+				if originalData != nil {
+					_, err = sys.PtracePokeData(t.ID, addr, originalData)
+					// _, err = pokeMemory(t.ID, addr, originalData)
+				}
+			}
+		})
+	}()
+	if err != nil {
+		return err
+	}
+	for {
+		sig := 0
+		t.dbp.execPtraceFunc(func() { err = ptraceCont(t.ID, sig) })
+		if err != nil {
+			return err
+		}
+		// To be able to catch process exit, we can only use wait instead of waitFast.
+		wpid, status, err := t.dbp.wait(t.ID, 0)
+		if err != nil {
+			return err
+		}
+		if (status == nil || status.Exited()) && wpid == t.dbp.pid {
+			t.dbp.postExit()
+			rs := 0
+			if status != nil {
+				rs = status.ExitStatus()
+			}
+			return proc.ErrProcessExited{Pid: t.dbp.pid, Status: rs}
+		}
+		if wpid == t.ID {
+			sig = 0
+			switch s := status.StopSignal(); s {
+			case sys.SIGTRAP:
+				return nil
+			case sys.SIGSTOP:
+				// delayed SIGSTOP, ignore it
+			case sys.SIGILL, sys.SIGBUS, sys.SIGFPE, sys.SIGSEGV, sys.SIGSTKFLT:
+				// propagate signals that can have been caused by the current instruction
+				sig = int(s)
+			default:
+				// delay propagation of all other signals
+				t.os.delayedSignal = int(s)
+			}
+		}
+	}
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/go-delve/delve/pkg/dwarf/op"
 	"github.com/go-delve/delve/pkg/dwarf/regnum"
 	"github.com/go-delve/delve/pkg/proc"
+	"golang.org/x/arch/riscv64/riscv64asm"
 )
 
 // Regs is wrapper for sys.PtraceRegs
@@ -187,6 +188,79 @@ func (r *RISCV64Registers) Copy() (proc.Registers, error) {
 	}
 
 	return &rr, nil
+}
+
+func (r *RISCV64Registers) GetReg(regNum uint64) (uint64, error) {
+	reg := riscv64asm.Reg(regNum)
+
+	if reg <= riscv64asm.X31 {
+		switch regNum {
+		case regnum.RISCV64_LR:
+			return uint64(r.Regs.Ra), nil
+		case regnum.RISCV64_SP:
+			return uint64(r.Regs.Sp), nil
+		case regnum.RISCV64_GP:
+			return uint64(r.Regs.Gp), nil
+		case regnum.RISCV64_TP:
+			return uint64(r.Regs.Tp), nil
+		case regnum.RISCV64_T0:
+			return uint64(r.Regs.T0), nil
+		case regnum.RISCV64_T1:
+			return uint64(r.Regs.T1), nil
+		case regnum.RISCV64_T2:
+			return uint64(r.Regs.T2), nil
+		case regnum.RISCV64_S0:
+			return uint64(r.Regs.S0), nil
+		case regnum.RISCV64_S1:
+			return uint64(r.Regs.S1), nil
+		case regnum.RISCV64_A0:
+			return uint64(r.Regs.A0), nil
+		case regnum.RISCV64_A1:
+			return uint64(r.Regs.A1), nil
+		case regnum.RISCV64_A2:
+			return uint64(r.Regs.A2), nil
+		case regnum.RISCV64_A3:
+			return uint64(r.Regs.A3), nil
+		case regnum.RISCV64_A4:
+			return uint64(r.Regs.A4), nil
+		case regnum.RISCV64_A5:
+			return uint64(r.Regs.A5), nil
+		case regnum.RISCV64_A6:
+			return uint64(r.Regs.A6), nil
+		case regnum.RISCV64_A7:
+			return uint64(r.Regs.A7), nil
+		case regnum.RISCV64_S2:
+			return uint64(r.Regs.S2), nil
+		case regnum.RISCV64_S3:
+			return uint64(r.Regs.S3), nil
+		case regnum.RISCV64_S4:
+			return uint64(r.Regs.S4), nil
+		case regnum.RISCV64_S5:
+			return uint64(r.Regs.S5), nil
+		case regnum.RISCV64_S6:
+			return uint64(r.Regs.S6), nil
+		case regnum.RISCV64_S7:
+			return uint64(r.Regs.S7), nil
+		case regnum.RISCV64_S8:
+			return uint64(r.Regs.S8), nil
+		case regnum.RISCV64_S9:
+			return uint64(r.Regs.S9), nil
+		case regnum.RISCV64_S10:
+			return uint64(r.Regs.S10), nil
+		case regnum.RISCV64_S11:
+			return uint64(r.Regs.S11), nil
+		case regnum.RISCV64_T3:
+			return uint64(r.Regs.T3), nil
+		case regnum.RISCV64_T4:
+			return uint64(r.Regs.T4), nil
+		case regnum.RISCV64_T5:
+			return uint64(r.Regs.T5), nil
+		case regnum.RISCV64_T6:
+			return uint64(r.Regs.T6), nil
+		}
+	}
+
+	return 0, proc.ErrUnknownRegister
 }
 
 func (r *RISCV64Registers) SetReg(regNum uint64, reg *op.DwarfRegister) (fpchanged bool, err error) {

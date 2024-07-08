@@ -108,13 +108,21 @@ func decodeArg(aop instArg, x uint32, index int) Arg {
 	case arg_rs1_mem:
 		var tmp uint32
 		tmp = x >> 20
-		return RegOffset{X0 + Reg((x>>15)&((1<<5)-1)), Simm{tmp, true, 12}}
+		// Sign-extend
+		if tmp>>uint32(12-1) == 1 {
+			tmp |= 0xfffff << 12
+		}
+		return RegOffset{X0 + Reg((x>>15)&((1<<5)-1)), Simm{int32(tmp), true, 12}}
 
 	case arg_rs1_store:
 		var tmp uint32
 		tmp = (x<<20)>>27 |
 			(x>>25)<<5
-		return RegOffset{X0 + Reg((x>>15)&((1<<5)-1)), Simm{tmp, true, 12}}
+		// Sign-extend
+		if tmp>>uint32(12-1) == 1 {
+			tmp |= 0xfffff << 12
+		}
+		return RegOffset{X0 + Reg((x>>15)&((1<<5)-1)), Simm{int32(tmp), true, 12}}
 
 	case arg_pred:
 		var tmp uint32
@@ -149,7 +157,11 @@ func decodeArg(aop instArg, x uint32, index int) Arg {
 	case arg_imm12:
 		var tmp uint32
 		tmp = x >> 20
-		return Simm{tmp, true, 12}
+		// Sign-extend
+		if tmp>>uint32(12-1) == 1 {
+			tmp |= 0xfffff << 12
+		}
+		return Simm{int32(tmp), true, 12}
 
 	case arg_imm20:
 		var tmp uint32
@@ -162,13 +174,21 @@ func decodeArg(aop instArg, x uint32, index int) Arg {
 			(x<<1)>>22<<1 |
 			(x<<11)>>31<<11 |
 			(x<<12)>>24<<12
-		return Simm{tmp, true, 21}
+		// Sign-extend
+		if tmp>>uint32(21-1) == 1 {
+			tmp |= 0x7ff << 21
+		}
+		return Simm{int32(tmp), true, 21}
 
 	case arg_simm12:
 		var tmp uint32
 		tmp = (x<<20)>>27 |
 			(x>>25)<<5
-		return Simm{tmp, true, 12}
+		// Sign-extend
+		if tmp>>uint32(12-1) == 1 {
+			tmp |= 0xfffff << 12
+		}
+		return Simm{int32(tmp), true, 12}
 
 	case arg_bimm12:
 		var tmp uint32
@@ -176,7 +196,11 @@ func decodeArg(aop instArg, x uint32, index int) Arg {
 			(x<<1)>>26<<5 |
 			(x<<24)>>31<<11 |
 			(x>>31)<<12
-		return Simm{tmp, true, 13}
+		// Sign-extend
+		if tmp>>uint32(13-1) == 1 {
+			tmp |= 0x7ffff << 13
+		}
+		return Simm{int32(tmp), true, 13}
 
 	default:
 		return nil

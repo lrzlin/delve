@@ -480,21 +480,16 @@ func (ui Uimm) String() string {
 }
 
 type Simm struct {
-	Imm     uint32
+	Imm     int32
 	Decimal bool
 	Width   uint8
 }
 
 func (si Simm) String() string {
-	// Sign-extend
-	if si.Imm>>uint32(si.Width-1) == 1 {
-		si.Imm |= 0xffffffff << si.Width
-	}
-
-	if si.Decimal == true {
-		return fmt.Sprintf("%d", int32(si.Imm))
+	if si.Decimal {
+		return fmt.Sprintf("%d", si.Imm)
 	} else {
-		return fmt.Sprintf("%#x", int32(si.Imm))
+		return fmt.Sprintf("%#x", si.Imm)
 	}
 }
 
