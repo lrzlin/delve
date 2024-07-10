@@ -262,13 +262,26 @@ func GoSyntax(inst Inst, pc uint64, symname func(uint64) (string, uint64), text 
 			op = "JMP"
 			args[0] = args[1]
 			args = args[:len(args)-1]
+		} else if inst.Args[0].(Reg) == X1 {
+			op = "CALL"
+			args[0] = args[1]
+			args = args[:len(args)-1]
 		} else {
 			args[0], args[1] = args[1], args[0]
 		}
 
 	case JALR:
 		if inst.Args[0].(Reg) == X0 {
+			if inst.Args[1].(RegOffset).OfsReg == X1 && inst.Args[1].(RegOffset).Ofs.Imm == 0 {
+				op = "RET"
+				args = args[:0]
+				break
+			}
 			op = "JMP"
+			args[0] = args[1]
+			args = args[:len(args)-1]
+		} else if inst.Args[0].(Reg) == X1 {
+			op = "CALL"
 			args[0] = args[1]
 			args = args[:len(args)-1]
 		} else {
