@@ -28,7 +28,7 @@ func riscv64AsmDecode(asmInst *AsmInstruction, mem []byte, regs *op.DwarfRegiste
 	switch inst.Op {
 	case riscv64asm.JALR:
 		rd, _ := inst.Args[0].(riscv64asm.Reg)
-		rs1, _ := inst.Args[1].(riscv64asm.Reg)
+		rs1 := inst.Args[1].(riscv64asm.RegOffset).OfsReg
 		if rd == riscv64asm.X1 {
 			asmInst.Kind = CallInstruction
 		} else if rd == riscv64asm.X0 && rs1 == riscv64asm.X1 {
