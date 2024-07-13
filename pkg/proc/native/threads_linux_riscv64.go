@@ -28,6 +28,33 @@ func (thread *nativeThread) fpRegisters() ([]proc.Register, []byte, error) {
 	return fpregs, riscv64_fpregs.Fregs, err
 }
 
+func pokeMemory(pid int, addr uintptr, data []byte) (count int, err error) {
+	count = 0
+	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/task/%d/mem", pid, pid), os.O_RDWR, 0)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	_, err = f.Seek(int64(addr), os.SEEK_SET)
+	if err != nil {
+		return 0, err
+	}
+	count, err = f.Write(data)
+	if count != len(data) || err != nil {
+		return 0, err
+	}
+	flushCache(addr, addr+uintptr(len(data)))
+	return count, err
+}
+
+func flushCache(start uintptr, end uintptr) {
+	// __NR_riscv_flush_icache
+	_, _, err := syscall.Syscall(259, start, end, 0)
+	if err != syscall.Errno(0) {
+		fmt.Printf("flushCache err=%x\n", err)
+	}
+}
+
 func (t *nativeThread) restoreRegisters(savedRegs proc.Registers) error {
 	var restoreRegistersErr error
 
@@ -117,9 +144,13 @@ func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
 		}
 
 	case riscv64asm.JALR:
+		rd, _ := nextInst.Args[0].(riscv64asm.Reg)
 		rs1_mem := nextInst.Args[1].(riscv64asm.RegOffset)
 		rs1, ofs := rs1_mem.OfsReg, rs1_mem.Ofs
 		src1, _ := regs.GetReg(uint64(rs1))
+		if rd == riscv64asm.X0 && rs1 == riscv64asm.X1 {
+			nextPCs = []uint64{(src1 + uint64(ofs.Imm)) & (^uint64(0x1))}
+		}
 		if (src1+uint64(ofs.Imm))&(^uint64(0x1)) != nextPCs[0] {
 			nextPCs = append(nextPCs, (src1+uint64(ofs.Imm))&(^uint64(0x1)))
 		}
@@ -201,8 +232,8 @@ func (procgrp *processGroup) singleStep(t *nativeThread) (err error) {
 			if err != nil {
 				return err
 			}
-			// _, err = pokeMemory(t.ID, addr, instr)
-			_, err = sys.PtracePokeData(t.ID, addr, instr)
+			_, err = pokeMemory(t.ID, addr, instr)
+			// _, err = sys.PtracePokeData(t.ID, addr, instr)
 			if err != nil {
 				return err
 			}
@@ -222,8 +253,8 @@ func (procgrp *processGroup) singleStep(t *nativeThread) (err error) {
 		t.dbp.execPtraceFunc(func() {
 			for addr, originalData := range originalDataSet {
 				if originalData != nil {
-					_, err = sys.PtracePokeData(t.ID, addr, originalData)
-					// _, err = pokeMemory(t.ID, addr, originalData)
+					// _, err = sys.PtracePokeData(t.ID, addr, originalData)
+					_, err = pokeMemory(t.ID, addr, originalData)
 				}
 			}
 		})

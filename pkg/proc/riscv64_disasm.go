@@ -38,7 +38,12 @@ func riscv64AsmDecode(asmInst *AsmInstruction, mem []byte, regs *op.DwarfRegiste
 		}
 
 	case riscv64asm.JAL:
-		asmInst.Kind = CallInstruction
+		rd, _ := inst.Args[0].(riscv64asm.Reg)
+		if rd == riscv64asm.X1 {
+			asmInst.Kind = CallInstruction
+		} else {
+			asmInst.Kind = JmpInstruction
+		}
 
 	case riscv64asm.BEQ,
 		riscv64asm.BNE,
