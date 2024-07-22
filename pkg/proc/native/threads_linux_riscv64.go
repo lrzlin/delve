@@ -101,6 +101,11 @@ func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if nextInst.Len == 2 {
+		nextInstBytes = nextInstBytes[:2]
+	}
+
 	switch nextInst.Op {
 	case riscv64asm.BEQ, riscv64asm.BNE, riscv64asm.BLT, riscv64asm.BGE, riscv64asm.BLTU, riscv64asm.BGEU:
 		rs1, _ := nextInst.Args[0].(riscv64asm.Reg)
@@ -164,8 +169,9 @@ func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
 		// BNE	Rtmp, Rarg1, 3(PC)
 		// SC	Rarg2, (Rarg0), Rtmp
 		// BNE	Rtmp, ZERO, -3(PC)
+		curPC := regs.PC() + uint64(nextInstLen)
 		t.dbp.execPtraceFunc(func() {
-			_, err = sys.PtracePeekData(t.ID, uintptr(regs.PC()+uint64(nextInstLen)), nextInstBytes)
+			_, err = sys.PtracePeekData(t.ID, uintptr(curPC), nextInstBytes)
 		})
 		if err != nil {
 			return nil, err
@@ -173,13 +179,17 @@ func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
 		nextInst, err = riscv64asm.Decode(nextInstBytes)
 		if err != nil {
 			return nil, err
+		}
+		if nextInst.Len == 2 {
+			nextInstBytes = nextInstBytes[:2]
 		}
 		if nextInst.Op != riscv64asm.BNE {
 			break
 		}
 
+		curPC += uint64(nextInstLen)
 		t.dbp.execPtraceFunc(func() {
-			_, err = sys.PtracePeekData(t.ID, uintptr(regs.PC()+uint64(nextInstLen*2)), nextInstBytes)
+			_, err = sys.PtracePeekData(t.ID, uintptr(curPC), nextInstBytes)
 		})
 		if err != nil {
 			return nil, err
@@ -187,13 +197,17 @@ func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
 		nextInst, err = riscv64asm.Decode(nextInstBytes)
 		if err != nil {
 			return nil, err
+		}
+		if nextInst.Len == 2 {
+			nextInstBytes = nextInstBytes[:2]
 		}
 		if nextInst.Op != riscv64asm.SC_D_RL && nextInst.Op != riscv64asm.SC_W_RL {
 			break
 		}
 
+		curPC += uint64(nextInstLen)
 		t.dbp.execPtraceFunc(func() {
-			_, err = sys.PtracePeekData(t.ID, uintptr(regs.PC()+uint64(nextInstLen*3)), nextInstBytes)
+			_, err = sys.PtracePeekData(t.ID, uintptr(regs.PC()+uint64(curPC)), nextInstBytes)
 		})
 		if err != nil {
 			return nil, err
@@ -202,10 +216,13 @@ func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
 		if err != nil {
 			return nil, err
 		}
+		if nextInst.Len == 2 {
+			nextInstBytes = nextInstBytes[:2]
+		}
 		if nextInst.Op != riscv64asm.BNE {
 			break
 		}
-		nextPCs = []uint64{regs.PC() + 3*uint64(nextInstLen)}
+		nextPCs = []uint64{curPC}
 	}
 
 	return nextPCs, nil

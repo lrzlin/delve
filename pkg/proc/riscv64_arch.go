@@ -14,13 +14,16 @@ import (
 // ebreak instruction: 0x00100073
 var riscv64BreakInstruction = []byte{0x73, 0x00, 0x10, 0x00}
 
+// c.ebreak instruction: 0x9002
+var riscv64CompressedBreakInstruction = []byte{0x02, 0x90}
+
 // RISCV64Arch returns an initialized RISCV64 struct.
 func RISCV64Arch(goos string) *Arch {
 	return &Arch{
 		Name:                             "riscv64",
 		ptrSize:                          8,
 		maxInstructionLength:             4,
-		breakpointInstruction:            riscv64BreakInstruction,
+		breakpointInstruction:            riscv64CompressedBreakInstruction,
 		breakInstrMovesPC:                false,
 		derefTLS:                         false,
 		prologues:                        prologuesRISCV64,
