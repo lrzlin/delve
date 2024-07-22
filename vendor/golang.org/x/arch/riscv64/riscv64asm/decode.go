@@ -35,13 +35,21 @@ func init() {
 }
 
 // Decode decodes the 4 bytes in src as a single instruction.
-// TODO: RVC support.
 func Decode(src []byte) (inst Inst, err error) {
-	if len(src) < 4 {
+	if len(src) < 2 {
 		return Inst{}, errShort
 	}
-
-	x := binary.LittleEndian.Uint32(src)
+	var length = len(src)
+	var x uint32
+	// Non-RVC instructions always starts with 0x11
+	// So check whether src[0] & 3 == 3
+	if src[0]&3 == 3 {
+		length = 4
+		x = binary.LittleEndian.Uint32(src)
+	} else {
+		length = 2
+		x = uint32(binary.LittleEndian.Uint16(src))
+	}
 
 Search:
 	for i, f := range instFormats {
@@ -56,11 +64,15 @@ Search:
 				break
 			}
 			arg := decodeArg(aop, x, i)
-			if arg == nil {
+			if arg == nil && f.op != C_NOP {
 				// Cannot decode argument.
 				continue Search
 			}
 			args[j] = arg
+		}
+
+		if length == 2 {
+			args = convertCompressedIns(&f, args)
 		}
 
 		decoderCover[i] = true
@@ -68,6 +80,7 @@ Search:
 			Op:   f.op,
 			Args: args,
 			Enc:  x,
+			Len:  length,
 		}
 		return inst, nil
 	}
@@ -202,7 +215,391 @@ func decodeArg(aop instArg, x uint32, index int) Arg {
 		}
 		return Simm{int32(tmp), true, 13}
 
+	case arg_rd_p, arg_rs2_p:
+		return X8 + Reg((x>>2)&((1<<3)-1))
+
+	case arg_fd_p, arg_fs2_p:
+		return F8 + Reg((x>>2)&((1<<3)-1))
+
+	case arg_rs1_p, arg_rd_rs1_p:
+		return X8 + Reg((x>>7)&((1<<3)-1))
+
+	case arg_rd_n0, arg_rs1_n0, arg_rd_rs1_n0, arg_c_rs1_n0:
+		if X0+Reg((x>>7)&((1<<5)-1)) == X0 {
+			return nil
+		}
+		return X0 + Reg((x>>7)&((1<<5)-1))
+
+	case arg_c_rs2_n0:
+		if X0+Reg((x>>2)&((1<<5)-1)) == X0 {
+			return nil
+		}
+		return X0 + Reg((x>>2)&((1<<5)-1))
+
+	case arg_c_fs2:
+		return F0 + Reg((x>>2)&((1<<5)-1))
+
+	case arg_c_rs2:
+		return X0 + Reg((x>>2)&((1<<5)-1))
+
+	case arg_rd_n2:
+		if X0+Reg((x>>7)&((1<<5)-1)) == X0 || X0+Reg((x>>7)&((1<<5)-1)) == X2 {
+			return nil
+		}
+		return X0 + Reg((x>>7)&((1<<5)-1))
+
+	case arg_c_imm6:
+		var tmp uint32
+		tmp = (x<<25)>>27 | (x<<19)>>31<<5
+		// Sign-extend
+		if tmp>>uint32(6-1) == 1 {
+			tmp |= 0x3ffffff << 6
+		}
+		return Simm{int32(tmp), true, 6}
+
+	case arg_c_nzimm6:
+		var tmp uint32
+		tmp = (x<<25)>>27 | (x<<19)>>31<<5
+		// Sign-extend
+		if tmp>>uint32(6-1) == 1 {
+			tmp |= 0x3ffffff << 6
+		}
+		if int32(tmp) == 0 {
+			return nil
+		}
+		return Simm{int32(tmp), true, 6}
+
+	case arg_c_nzuimm6:
+		var tmp uint32
+		tmp = (x<<25)>>27 | (x<<19)>>31<<5
+		if int32(tmp) == 0 {
+			return nil
+		}
+		return Uimm{tmp, false}
+
+	case arg_c_uimm7:
+		var tmp uint32
+		tmp = (x<<26)>>31<<6 |
+			(x<<25)>>31<<2 |
+			(x<<19)>>29<<3
+
+		return Uimm{tmp, false}
+
+	case arg_c_uimm8:
+		var tmp uint32
+		tmp = (x<<25)>>30<<6 | (x<<19)>>29<<3
+
+		return Uimm{tmp, false}
+
+	case arg_c_uimm8sp_s:
+		var tmp uint32
+		tmp = (x<<23)>>30<<6 | (x<<19)>>28<<2
+
+		return Uimm{tmp, false}
+
+	case arg_c_uimm8sp:
+		var tmp uint32
+		tmp = (x<<25)>>29<<2 |
+			(x<<19)>>31<<5 |
+			(x<<28)>>30<<6
+
+		return Uimm{tmp, false}
+
+	case arg_c_uimm9sp_s:
+		var tmp uint32
+		tmp = (x<<22)>>29<<6 | (x<<19)>>29<<3
+
+		return Uimm{tmp, false}
+
+	case arg_c_uimm9sp:
+		var tmp uint32
+		tmp = (x<<25)>>30<<3 |
+			(x<<19)>>31<<5 |
+			(x<<27)>>29<<6
+
+		return Uimm{tmp, false}
+
+	case arg_c_bimm9:
+		var tmp uint32
+		tmp = (x<<29)>>31<<5 |
+			(x<<27)>>30<<1 |
+			(x<<25)>>30<<6 |
+			(x<<19)>>31<<8 |
+			(x<<20)>>30<<3
+		// Sign-extend
+		if tmp>>uint32(9-1) == 1 {
+			tmp |= 0x7fffff << 9
+		}
+		return Simm{int32(tmp), true, 9}
+
+	case arg_c_nzimm10:
+		var tmp uint32
+		tmp = (x<<29)>>31<<5 |
+			(x<<27)>>30<<7 |
+			(x<<26)>>31<<6 |
+			(x<<25)>>31<<4 |
+			(x<<19)>>31<<9
+		// Sign-extend
+		if tmp>>uint32(10-1) == 1 {
+			tmp |= 0x3fffff << 10
+		}
+		if int32(tmp) == 0 {
+			return nil
+		}
+		return Simm{int32(tmp), true, 10}
+
+	case arg_c_nzuimm10:
+		var tmp uint32
+		tmp = (x<<26)>>31<<3 |
+			(x<<25)>>31<<2 |
+			(x<<21)>>28<<6 |
+			(x<<19)>>30<<4
+		if int32(tmp) == 0 {
+			return nil
+		}
+		return Uimm{tmp, false}
+
+	case arg_c_imm12:
+		var tmp uint32
+		tmp = (x<<29)>>31<<5 |
+			(x<<26)>>28<<1 |
+			(x<<25)>>31<<7 |
+			(x<<24)>>31<<6 |
+			(x<<23)>>31<<10 |
+			(x<<21)>>30<<8 |
+			(x<<20)>>31<<4 |
+			(x<<19)>>31<<11
+		// Sign-extend
+		if tmp>>uint32(12-1) == 1 {
+			tmp |= 0xfffff << 12
+		}
+		return Simm{int32(tmp), true, 12}
+
+	case arg_c_nzimm18:
+		var tmp uint32
+		tmp = (x<<25)>>27<<12 | (x<<19)>>31<<17
+		// Sign-extend
+		if tmp>>uint32(18-1) == 1 {
+			tmp |= 0x3fff << 18
+		}
+		if int32(tmp) == 0 {
+			return nil
+		}
+		return Simm{int32(tmp), true, 18}
+
 	default:
 		return nil
 	}
+}
+
+// convertCompressedIns rewrites the RVC Instruction to regular Instructions
+func convertCompressedIns(f *instFormat, args Args) Args {
+	var newargs Args
+	switch f.op {
+	case C_ADDI4SPN:
+		f.op = ADDI
+		newargs[0] = args[0]
+		newargs[1] = Reg(X2)
+		newargs[2] = Simm{int32(args[1].(Uimm).Imm), true, 12}
+
+	case C_LW:
+		f.op = LW
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{args[1].(Reg), Simm{int32(args[2].(Uimm).Imm), true, 12}}
+
+	case C_SW:
+		f.op = SW
+		newargs[0] = args[1]
+		newargs[1] = RegOffset{args[0].(Reg), Simm{int32(args[2].(Uimm).Imm), true, 12}}
+
+	case C_NOP:
+		f.op = ADDI
+		newargs[0] = X0
+		newargs[1] = X0
+		newargs[2] = Simm{0, true, 12}
+
+	case C_ADDI:
+		f.op = ADDI
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = Simm{args[1].(Simm).Imm, true, 12}
+
+	case C_LI:
+		f.op = ADDI
+		newargs[0] = args[0]
+		newargs[1] = Reg(X0)
+		newargs[2] = Simm{args[1].(Simm).Imm, true, 12}
+
+	case C_ADDI16SP:
+		f.op = ADDI
+		newargs[0] = Reg(X2)
+		newargs[1] = Reg(X2)
+		newargs[2] = Simm{args[0].(Simm).Imm, true, 12}
+
+	case C_LUI:
+		f.op = LUI
+		newargs[0] = args[0]
+		newargs[1] = Uimm{uint32(args[1].(Simm).Imm >> 12), false}
+
+	case C_ANDI:
+		f.op = ANDI
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = Simm{args[1].(Simm).Imm, true, 12}
+
+	case C_SUB:
+		f.op = SUB
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_XOR:
+		f.op = XOR
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_OR:
+		f.op = OR
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_AND:
+		f.op = AND
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_J:
+		f.op = JAL
+		newargs[0] = Reg(X0)
+		newargs[1] = Simm{args[0].(Simm).Imm, true, 21}
+
+	case C_BEQZ:
+		f.op = BEQ
+		newargs[0] = args[0]
+		newargs[1] = Reg(X0)
+		newargs[2] = Simm{args[1].(Simm).Imm, true, 13}
+
+	case C_BNEZ:
+		f.op = BNE
+		newargs[0] = args[0]
+		newargs[1] = Reg(X0)
+		newargs[2] = Simm{args[1].(Simm).Imm, true, 13}
+
+	case C_LWSP:
+		f.op = LW
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{Reg(X2), Simm{int32(args[1].(Uimm).Imm), true, 12}}
+
+	case C_JR:
+		f.op = JALR
+		newargs[0] = Reg(X0)
+		newargs[1] = RegOffset{args[0].(Reg), Simm{0, true, 12}}
+
+	case C_MV:
+		f.op = ADD
+		newargs[0] = args[0]
+		newargs[1] = Reg(X0)
+		newargs[2] = args[1]
+
+	case C_EBREAK:
+		f.op = EBREAK
+
+	case C_JALR:
+		f.op = JALR
+		newargs[0] = Reg(X1)
+		newargs[1] = RegOffset{args[0].(Reg), Simm{0, true, 12}}
+
+	case C_ADD:
+		f.op = ADD
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_SWSP:
+		f.op = SW
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{Reg(X2), Simm{int32(args[1].(Uimm).Imm), true, 12}}
+
+	// riscv64 compressed instructions
+	case C_LD:
+		f.op = LD
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{args[1].(Reg), Simm{int32(args[2].(Uimm).Imm), true, 12}}
+
+	case C_SD:
+		f.op = SD
+		newargs[0] = args[1]
+		newargs[1] = RegOffset{args[0].(Reg), Simm{int32(args[2].(Uimm).Imm), true, 12}}
+
+	case C_ADDIW:
+		f.op = ADDIW
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = Simm{args[1].(Simm).Imm, true, 12}
+
+	case C_SRLI:
+		f.op = SRLI
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_SRAI:
+		f.op = SRAI
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_SUBW:
+		f.op = SUBW
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_ADDW:
+		f.op = ADDW
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_SLLI:
+		f.op = SLLI
+		newargs[0] = args[0]
+		newargs[1] = args[0]
+		newargs[2] = args[1]
+
+	case C_LDSP:
+		f.op = LD
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{Reg(X2), Simm{int32(args[1].(Uimm).Imm), true, 12}}
+
+	case C_SDSP:
+		f.op = SD
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{Reg(X2), Simm{int32(args[1].(Uimm).Imm), true, 12}}
+
+	// riscv double persicion floating point compressed instructions
+	case C_FLD:
+		f.op = FLD
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{args[1].(Reg), Simm{int32(args[2].(Uimm).Imm), true, 12}}
+
+	case C_FSD:
+		f.op = FSD
+		newargs[0] = args[1]
+		newargs[1] = RegOffset{args[0].(Reg), Simm{int32(args[2].(Uimm).Imm), true, 12}}
+
+	case C_FLDSP:
+		f.op = FLD
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{Reg(X2), Simm{int32(args[1].(Uimm).Imm), true, 12}}
+
+	case C_FSDSP:
+		f.op = FSD
+		newargs[0] = args[0]
+		newargs[1] = RegOffset{Reg(X2), Simm{int32(args[1].(Uimm).Imm), true, 12}}
+	}
+	return newargs
 }

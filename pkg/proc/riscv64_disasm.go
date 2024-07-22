@@ -13,15 +13,14 @@ var (
 )
 
 func riscv64AsmDecode(asmInst *AsmInstruction, mem []byte, regs *op.DwarfRegisters, memrw MemoryReadWriter, bi *BinaryInfo) error {
-	asmInst.Size = 4
-	asmInst.Bytes = mem[:asmInst.Size]
-
 	inst, err := riscv64asm.Decode(mem)
 	if err != nil {
 		asmInst.Inst = (*riscv64ArchInst)(nil)
 		return err
 	}
 
+	asmInst.Size = inst.Len
+	asmInst.Bytes = mem[:asmInst.Size]
 	asmInst.Inst = (*riscv64ArchInst)(&inst)
 	asmInst.Kind = OtherInstruction
 

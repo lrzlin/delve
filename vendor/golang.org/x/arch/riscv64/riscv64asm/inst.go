@@ -36,6 +36,7 @@ type Inst struct {
 	Op   Op     // Opcode mnemonic.
 	Enc  uint32 // Raw encoding bits.
 	Args Args   // Instruction arguments, in RISC-V mamual order.
+	Len  int    // Length of encoded instruction in bytes
 }
 
 func (i Inst) String() string {
@@ -149,7 +150,7 @@ func (r Reg) String() string {
 		return fmt.Sprintf("t%d", int(r-X5))
 
 	case r == X8:
-		return "fp"
+		return "s0"
 
 	case r == X9:
 		return "s1"
