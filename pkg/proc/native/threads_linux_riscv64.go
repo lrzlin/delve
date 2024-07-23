@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"debug/elf"
 	"fmt"
+	"os"
 	"syscall"
 	"unsafe"
 
@@ -104,6 +105,8 @@ func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
 
 	if nextInst.Len == 2 {
 		nextInstBytes = nextInstBytes[:2]
+		nextInstLen = 2
+		nextPCs = []uint64{regs.PC() + uint64(nextInstLen)}
 	}
 
 	switch nextInst.Op {

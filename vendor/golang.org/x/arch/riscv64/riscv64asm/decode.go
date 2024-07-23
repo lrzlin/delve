@@ -600,6 +600,12 @@ func convertCompressedIns(f *instFormat, args Args) Args {
 		f.op = FSD
 		newargs[0] = args[0]
 		newargs[1] = RegOffset{Reg(X2), Simm{int32(args[1].(Uimm).Imm), true, 12}}
+
+	case C_UNIMP:
+		f.op = CSRRW
+		newargs[0] = Reg(X0)
+		newargs[1] = Csr(CYCLE)
+		newargs[2] = Reg(X0)
 	}
 	return newargs
 }

@@ -136,6 +136,7 @@ const (
 	C_SUBW
 	C_SW
 	C_SWSP
+	C_UNIMP
 	C_XOR
 	DIV
 	DIVU
@@ -462,6 +463,7 @@ var opstr = [...]string{
 	C_SUBW:	"C.SUBW",
 	C_SW:	"C.SW",
 	C_SWSP:	"C.SWSP",
+	C_UNIMP:	"C.UNIMP",
 	C_XOR:	"C.XOR",
 	DIV:	"DIV",
 	DIVU:	"DIVU",
@@ -863,7 +865,7 @@ var instFormats = [...]instFormat{
 	{mask: 0x0000e003, value: 0x0000c001, op: C_BEQZ, args: instArgs{arg_rs1_p, arg_c_bimm9}},
 	// C.BNEZ rs1_p, c_bimm9
 	{mask: 0x0000e003, value: 0x0000e001, op: C_BNEZ, args: instArgs{arg_rs1_p, arg_c_bimm9}},
-	// C.EBREAK 
+	// C.EBREAK
 	{mask: 0x0000ffff, value: 0x00009002, op: C_EBREAK, args: instArgs{}},
 	// C.FLD fd_p, rs1_p, c_uimm8
 	{mask: 0x0000e003, value: 0x00002000, op: C_FLD, args: instArgs{arg_fd_p, arg_rs1_p, arg_c_uimm8}},
@@ -915,6 +917,8 @@ var instFormats = [...]instFormat{
 	{mask: 0x0000e003, value: 0x0000c000, op: C_SW, args: instArgs{arg_rs1_p, arg_rs2_p, arg_c_uimm7}},
 	// C.SWSP c_rs2, c_uimm8sp_s
 	{mask: 0x0000e003, value: 0x0000c002, op: C_SWSP, args: instArgs{arg_c_rs2, arg_c_uimm8sp_s}},
+	// C.UNIMP
+	{mask: 0x0000ffff, value: 0x00000000, op: C_UNIMP, args: instArgs{}},
 	// C.XOR rd_rs1_p, rs2_p
 	{mask: 0x0000fc63, value: 0x00008c21, op: C_XOR, args: instArgs{arg_rd_rs1_p, arg_rs2_p}},
 	// DIV rd, rs1, rs2
@@ -925,9 +929,9 @@ var instFormats = [...]instFormat{
 	{mask: 0xfe00707f, value: 0x0200503b, op: DIVUW, args: instArgs{arg_rd, arg_rs1, arg_rs2}},
 	// DIVW rd, rs1, rs2
 	{mask: 0xfe00707f, value: 0x0200403b, op: DIVW, args: instArgs{arg_rd, arg_rs1, arg_rs2}},
-	// EBREAK 
+	// EBREAK
 	{mask: 0xffffffff, value: 0x00100073, op: EBREAK, args: instArgs{}},
-	// ECALL 
+	// ECALL
 	{mask: 0xffffffff, value: 0x00000073, op: ECALL, args: instArgs{}},
 	// FADD.D fd, fs1, fs2
 	{mask: 0xfe00007f, value: 0x02000053, op: FADD_D, args: instArgs{arg_fd, arg_fs1, arg_fs2}},
@@ -1035,7 +1039,7 @@ var instFormats = [...]instFormat{
 	{mask: 0xfe00007f, value: 0x18000053, op: FDIV_S, args: instArgs{arg_fd, arg_fs1, arg_fs2}},
 	// FENCE pred, succ
 	{mask: 0x0000707f, value: 0x0000000f, op: FENCE, args: instArgs{arg_pred, arg_succ}},
-	// FENCE.I 
+	// FENCE.I
 	{mask: 0x0000707f, value: 0x0000100f, op: FENCE_I, args: instArgs{}},
 	// FEQ.D rd, fs1, fs2
 	{mask: 0xfe00707f, value: 0xa2002053, op: FEQ_D, args: instArgs{arg_rd, arg_fs1, arg_fs2}},

@@ -117,6 +117,15 @@ func GoSyntax(inst Inst, pc uint64, symname func(uint64) (string, uint64), text 
 			args[i], args[j] = args[j], args[i]
 		}
 
+	case CSRRW:
+		switch inst.Args[1].(Csr) {
+		case CYCLE:
+			if inst.Args[0].(Reg) == X0 && inst.Args[2].(Reg) == X0 {
+				op = "UNIMP"
+				args = nil
+			}
+		}
+
 	case CSRRS:
 		if inst.Args[2].(Reg) == X0 {
 			switch inst.Args[1].(Csr) {

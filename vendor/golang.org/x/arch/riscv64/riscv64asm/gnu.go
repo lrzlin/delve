@@ -197,6 +197,12 @@ func GNUSyntax(inst Inst) string {
 			args[1] = args[2]
 			args = args[:len(args)-1]
 
+		case CYCLE:
+			if inst.Args[0].(Reg) == X0 && inst.Args[2].(Reg) == X0 {
+				op = "unimp"
+				args = nil
+			}
+
 		default:
 			if inst.Args[0].(Reg) == X0 {
 				op = "csrw"
