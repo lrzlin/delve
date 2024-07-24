@@ -24,6 +24,7 @@ func RISCV64Arch(goos string) *Arch {
 		ptrSize:                          8,
 		maxInstructionLength:             4,
 		breakpointInstruction:            riscv64CompressedBreakInstruction,
+		altBreakpointInstruction:         riscv64BreakInstruction,
 		breakInstrMovesPC:                false,
 		derefTLS:                         false,
 		prologues:                        prologuesRISCV64,

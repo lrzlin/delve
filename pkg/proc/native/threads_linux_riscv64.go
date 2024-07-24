@@ -94,7 +94,11 @@ func (t *nativeThread) resolvePC(savedRegs proc.Registers) ([]uint64, error) {
 	}
 
 	nextPCs := []uint64{regs.PC() + uint64(nextInstLen)}
-	if bytes.Equal(nextInstBytes, t.BinInfo().Arch.BreakpointInstruction()) {
+	if bytes.Equal(nextInstBytes, t.BinInfo().Arch.AltBreakpointInstruction()) {
+		return nextPCs, nil
+	} else if bytes.Equal(nextInstBytes, t.BinInfo().Arch.BreakpointInstruction()) {
+		nextInstLen = 2
+		nextPCs = []uint64{regs.PC() + uint64(nextInstLen)}
 		return nextPCs, nil
 	}
 
